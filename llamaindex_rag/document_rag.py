@@ -41,9 +41,24 @@ load_dotenv()
 # Project paths
 # =========================================================
 
-DOCUMENT_PATH = "data/documents"
+# Get the project root directory
+PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))
+)
 
-VECTOR_INDEX_PATH = "data/vector_index"
+# Path to the policy documents
+DOCUMENT_PATH = os.path.join(
+    PROJECT_ROOT,
+    "data",
+    "documents"
+)
+
+# Path to the persisted vector index
+VECTOR_INDEX_PATH = os.path.join(
+    PROJECT_ROOT,
+    "data",
+    "vector_index"
+)
 
 
 # =========================================================

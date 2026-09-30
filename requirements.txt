@@ -1,5 +1,27 @@
-llama-index
-llama-index-llms-openai
-llama-index-embeddings-openai
-python-dotenv
-llama-index-embeddings-huggingface sentence-transformers
+# --- Google ADK & A2A Services ---
+google-adk==2.10.0
+a2a-sdk==1.2.0
+uvicorn==0.51.0
+fastapi==0.139.2
+litellm==1.103.0
+truststore==0.10.4
+python-dotenv==1.2.3
+
+# --- OpenTelemetry & Google API Core (Pinned for ADK 2.10.0 Compatibility) ---
+google-api-core==2.34.0
+opentelemetry-api==1.42.1
+opentelemetry-sdk==1.42.1
+opentelemetry-semantic-conventions==0.63b1
+opentelemetry-proto==1.42.1
+opentelemetry-exporter-otlp-proto-common==1.42.1
+opentelemetry-exporter-otlp-proto-grpc==1.42.1
+protobuf==6.33.6
+
+# --- LlamaIndex & RAG Services ---
+llama-index==0.14.25
+llama-index-llms-openai==0.7.10
+llama-index-embeddings-openai==0.6.0
+llama-index-embeddings-huggingface==0.8.0
+sentence-transformers==6.1.0
+openai==2.54.0
+sqlalchemy==2.0.51

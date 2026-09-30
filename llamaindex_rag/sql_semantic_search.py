@@ -4,7 +4,7 @@ import truststore
 from dotenv import load_dotenv
 from openai import OpenAI
 from sqlalchemy import create_engine
-
+from pathlib import Path
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core import (
     SQLDatabase,
@@ -111,9 +111,11 @@ llm = NVIDIA_LLM()
 # Database
 # =========================================================
 
-engine = create_engine(
-    "sqlite:///data/telecom_ops.db"
-)
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+DATABASE_PATH = BASE_DIR / "data" / "telecom_ops.db"
+
+engine = create_engine(f"sqlite:///{DATABASE_PATH}")
 
 sql_database = SQLDatabase(engine)
 
@@ -287,7 +289,7 @@ query_engine = SQLTableRetrieverQueryEngine(
 
 print("SQL Table Retriever Query Engine created!")
 
-query = "Which region had the most CRITICAL network outages?"
+query = input("Enter the query : ")
 
 print("\nQuery:", query)
 
