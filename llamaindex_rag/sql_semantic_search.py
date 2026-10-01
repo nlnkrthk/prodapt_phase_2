@@ -238,7 +238,7 @@ Settings.embed_model = embed_model
 # Semantic SQL vector index
 # =========================================================
 
-PERSIST_DIR = "data/semantic_sql_index"
+PERSIST_DIR = str(BASE_DIR / "data" / "semantic_sql_index")
 
 
 if os.path.exists(PERSIST_DIR):
@@ -289,11 +289,15 @@ query_engine = SQLTableRetrieverQueryEngine(
 
 print("SQL Table Retriever Query Engine created!")
 
-query = input("Enter the query : ")
+def answer_sql_question(query: str) -> str:
+    """Execute natural language query against telecom SQL database and return answer."""
+    response = query_engine.query(query)
+    return str(response)
 
-print("\nQuery:", query)
 
-response = query_engine.query(query)
-
-print("\nAnswer:")
-print(response)
+if __name__ == "__main__":
+    query = input("Enter the query : ")
+    print("\nQuery:", query)
+    response = answer_sql_question(query)
+    print("\nAnswer:")
+    print(response)
