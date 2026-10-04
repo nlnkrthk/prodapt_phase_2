@@ -2,65 +2,6 @@
 
 An intelligent, multi-agent operations platform for telecommunications providers. This platform automates customer support, billing dispute resolution, network diagnostics, and policy exploration using **Google Agent Development Kit (ADK)**, the **Agent-to-Agent (A2A) protocol**, and **LlamaIndex RAG**.
 
----
-
-## Table of Contents
-
-1. [Project Overview](#project-overview)
-2. [System Architecture](#system-architecture)
-3. [Core Components](#core-components)
-   - [Billing Resolution Service (ADK / A2A)](#1-billing-resolution-service-port-8002)
-   - [Network Diagnostics Service (ADK / A2A)](#2-network-diagnostics-service-port-8001)
-   - [LlamaIndex Document RAG](#3-llamaindex-document-rag)
-   - [LlamaIndex Semantic SQL](#4-llamaindex-semantic-sql)
-4. [Database Design](#database-design)
-5. [Prerequisites & Environment Configuration](#prerequisites--environment-configuration)
-   - [Python & System Requirements](#python--system-requirements)
-   - [Critical Dependency Alignment](#critical-dependency-alignment)
-   - [Environment Variables (.env)](#environment-variables-env)
-6. [How to Run the Services](#how-to-run-the-services)
-   - [Starting the Services](#starting-the-services)
-   - [Verifying Agent Cards](#verifying-agent-cards)
-   - [Testing the Billing Resolution Agent](#testing-the-billing-resolution-agent)
-7. [Directory Structure](#directory-structure)
-
----
-
-## Project Overview
-
-In traditional telecom operations, addressing customer issues requires cross-referencing multiple siloed systems:
-- Checking billing systems for double charges or disputed invoices.
-- Querying network telemetry for tower outages or degradation.
-- Searching policy documents for refund rules, service level agreements (SLAs), and roaming caps.
-
-The **Agentic AI Operations Center** coordinates specialized agents that interact directly with database backends, document stores, and external protocols to resolve real-world telecom inquiries accurately without hallucinating data.
-
----
-
-## System Architecture
-
-```mermaid
-flowchart TD
-    Client["Client / User Query"] --> A2A_Router["A2A & Supervisor Layer"]
-
-    subgraph ADK_Services ["Google ADK Services (A2A Protocol)"]
-        A2A_Router -->|Port 8001| NetDiag["Network Diagnostics Agent"]
-        A2A_Router -->|Port 8002| BillRes["Billing Resolution Agent"]
-
-        NetDiag -->|SQL Tools| DB[(SQLite Database: telecom_ops.db)]
-        BillRes -->|SQL Tools| DB
-    end
-
-    subgraph LlamaIndex_Services ["LlamaIndex RAG Services"]
-        A2A_Router --> DocRAG["Document RAG (Policy & SLAs)"]
-        A2A_Router --> SQLSearch["Semantic SQL Engine"]
-
-        DocRAG --> Docs[Policy Documents]
-        SQLSearch --> DB
-    end
-```
-
----
 
 ## Core Components
 
@@ -91,6 +32,44 @@ flowchart TD
 ### 4. LlamaIndex Semantic SQL
 - **Script:** `llamaindex_rag/sql_semantic_search.py`
 - **Purpose:** Translates high-level natural language analytics questions into SQL queries across the network metrics and tower performance logs.
+
+### 5. LangGraph Supervisor & Orchestrator
+- **Script:** `orchestration/graph.py` & `orchestration/state.py`
+- **Purpose:** Acts as the primary supervisor/orchestrator coordinating all specialist worker nodes (`PolicyRAG`, `NetworkAnalytics`, `NetworkDiagnosticsADK`, `BillingResolutionADK`), accumulating findings into `agent_context`, and routing to the customer communications layer before completion.
+
+### 6. CrewAI Customer Communications Layer
+- **Script:** `orchestration/crew_nodes.py`
+- **Model:** Anthropic Claude (`anthropic/claude-sonnet-4-5-20250929`) configured via the existing `ANTHROPIC_API_KEY` in `.env`.
+- **Purpose:** Sequential two-agent crew responsible solely for professional, customer-ready communication:
+  1. **Customer Communications Specialist:** Converts technical findings and `agent_context` into an empathetic, factual customer response draft.
+  2. **Quality Reviewer:** Cross-checks the draft against `agent_context` to guarantee 100% factual accuracy (verifying amounts and pending vs applied statuses) and returns ONLY the finalized customer response.
+
+```
+USER QUERY
+    │
+    ▼
+LANGGRAPH SUPERVISOR (orchestration/graph.py)
+    │
+    ├──► PolicyRAG (LlamaIndex Document RAG)
+    ├──► NetworkAnalytics (LlamaIndex Semantic SQL)
+    ├──► NetworkDiagnosticsADK (Google ADK Port 8001)
+    └──► BillingResolutionADK (Google ADK Port 8002)
+    │
+    ▼
+accumulated agent_context
+    │
+    ▼
+CREWAI COMMUNICATIONS LAYER (orchestration/crew_nodes.py)
+    │
+    ▼
+Communications Specialist (Drafts customer-facing reply)
+    │
+    ▼
+Quality Reviewer (Audits against context & outputs final text)
+    │
+    ▼
+FINAL CUSTOMER-READY RESPONSE
+```
 
 ---
 
@@ -127,31 +106,6 @@ Google ADK `2.10.0` imposes specific constraints on OpenTelemetry:
 - Requires `opentelemetry-api >= 1.39, <= 1.42.1` and `opentelemetry-sdk >= 1.39, <= 1.42.1`.
 - Newer versions of `google-api-core` (≥ 2.36) require `opentelemetry-api >= 1.44.0`, which creates a version conflict with ADK.
 - **Solution:** We pin `google-api-core==2.34.0`, which does not impose the higher OpenTelemetry constraint and is fully supported by `a2a-sdk >= 1.26.0`.
-
-All compatible versions are locked in [`requirements.txt`](file:///D:/Prodapt_Phase_2/requirements.txt):
-```text
-google-adk==2.10.0
-a2a-sdk==1.2.0
-uvicorn==0.51.0
-fastapi==0.139.2
-litellm==1.103.0
-truststore==0.10.4
-python-dotenv==1.2.3
-google-api-core==2.34.0
-opentelemetry-api==1.42.1
-opentelemetry-sdk==1.42.1
-opentelemetry-semantic-conventions==0.63b1
-opentelemetry-proto==1.42.1
-opentelemetry-exporter-otlp-proto-common==1.42.1
-opentelemetry-exporter-otlp-proto-grpc==1.42.1
-protobuf==6.33.6
-```
-
-To install or verify dependencies:
-```powershell
-pip install -r requirements.txt
-pip check
-```
 
 ### Environment Variables (`.env`)
 Create a `.env` file in the root project folder:
@@ -201,50 +155,21 @@ Once the services are running, verify their discovery cards via browser or curl:
 
 ---
 
-### Testing the Billing Resolution Agent
+### 3. Launch the Streamlit Operations Dashboard
 
-#### 1. Individual Tool Tests
-Run any of the standalone test scripts in `adk-services/`:
+Once the ADK services are running (or even without them for RAG/SQL-only flows), open a new terminal in the project root:
+
 ```powershell
-python test_billing_tool.py
-python test_duplicate_tool.py
-python test_credit_tool.py
+cd D:\Prodapt_Phase_2
+streamlit run ui/app.py
 ```
 
-#### 2. End-to-End A2A Client Request
-You can interact with the running A2A service on port 8002 using ADK's `RemoteA2aAgent`:
-
-```python
-import asyncio
-from google.genai.types import Content, Part
-from google.adk.runners import InMemoryRunner
-from google.adk.a2a.agent import RemoteA2aAgent
-
-async def test_agent():
-    remote_agent = RemoteA2aAgent(
-        name="billing_client",
-        agent_card="http://localhost:8002/.well-known/agent-card.json",
-    )
-    runner = InMemoryRunner(agent=remote_agent)
-    session = await runner.session_service.create_session(
-        app_name=runner.app_name, user_id="user1"
-    )
-
-    query = "Customer CUST-10002 was charged twice. Check the account and duplicate charges."
-    message = Content(role="user", parts=[Part.from_text(text=query)])
-
-    async for event in runner.run_async(
-        session_id=session.id, user_id="user1", new_message=message
-    ):
-        if event.content and event.content.parts:
-            for part in event.content.parts:
-                if part.text:
-                    print(part.text)
-
-asyncio.run(test_agent())
-```
-
-The agent will execute `lookup_billing_account` and `check_duplicate_charges` against `telecom_ops.db` and report the duplicate charge (`CHG-50022` for $65.99) with full factual grounding.
+The app will open at **http://localhost:8501** and provides:
+- Live system status (database, vector index, ADK services)
+- Customer inquiry text area and Submit button
+- Customer-facing final response (CrewAI-polished)
+- Agent Execution Trace (which workers ran, in order, with their output snippets)
+- Accumulated context debug panel
 
 ---
 
@@ -277,6 +202,18 @@ D:\Prodapt_Phase_2\
 ├── llamaindex_rag/
 │   ├── document_rag.py               # Document RAG over telecom policies/SLAs
 │   └── sql_semantic_search.py        # Semantic natural language SQL queries
+│
+├── orchestration/                    # Orchestration & Customer Communications
+│   ├── __init__.py
+│   ├── state.py                      # LangGraph AgentState definition & trace reducer
+│   ├── graph.py                      # LangGraph Supervisor & conditional routing
+│   ├── adk_remote_client.py          # A2A client for external ADK services
+│   ├── crew_nodes.py                 # CrewAI Customer Communications layer
+│   ├── test_crew_integration.py      # Unit & live integration test suite for CrewAI
+│   └── test_langgraph_paths.py       # LangGraph multi-worker path tests
+│
+├── ui/                               # Streamlit front-end
+│   └── app.py                        # Operations dashboard (streamlit run ui/app.py)
 │
 └── sql/
     ├── 01_schema.sql                 # Database table DDL

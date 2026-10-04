@@ -25,3 +25,9 @@ llama-index-embeddings-huggingface==0.8.0
 sentence-transformers==6.1.0
 openai==2.54.0
 sqlalchemy==2.0.51
+
+# --- CrewAI, LangGraph & Streamlit ---
+crewai==1.15.23
+langgraph==1.2.12
+langchain-anthropic==1.7.5
+streamlit==1.65.0

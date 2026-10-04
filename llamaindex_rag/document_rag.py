@@ -94,7 +94,7 @@ class NVIDIA_LLM(CustomLLM):
 
     temperature: float = 0.2
 
-    max_tokens: int = 500
+    max_tokens: int = 2048
 
     # Return model information to LlamaIndex
     @property
@@ -127,8 +127,12 @@ class NVIDIA_LLM(CustomLLM):
             max_tokens=self.max_tokens
         )
 
-        # Get the generated text
-        text = response.choices[0].message.content
+        choice = response.choices[0]
+        text = choice.message.content
+        if text is None:
+            text = getattr(choice.message, "reasoning_content", None) or ""
+        if not text:
+            text = "No response generated."
 
         # Return the response in LlamaIndex format
         return CompletionResponse(

@@ -54,7 +54,7 @@ class NVIDIA_LLM(CustomLLM):
 
     model_name: str = "openai/gpt-oss-20b"
     temperature: float = 0.2
-    max_tokens: int = 500
+    max_tokens: int = 2048
 
     @property
     def metadata(self) -> LLMMetadata:
@@ -86,8 +86,16 @@ class NVIDIA_LLM(CustomLLM):
             max_tokens=self.max_tokens,
         )
 
+        choice = response.choices[0]
+        text = choice.message.content
+        if text is None:
+            # Fallback to reasoning_content if model was cut off during reasoning
+            text = getattr(choice.message, "reasoning_content", None) or ""
+        if not text:
+            text = "No response generated."
+
         return CompletionResponse(
-            text=response.choices[0].message.content
+            text=text
         )
 
     def stream_complete(

@@ -16,6 +16,13 @@ and context accumulation.
 
 import os
 import sys
+from pathlib import Path
+
+# Ensure project root is in sys.path regardless of execution directory
+_project_root = str(Path(__file__).resolve().parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 from typing import Literal
 import truststore
 
@@ -114,10 +121,10 @@ SPECIALIST WORKER RESPONSIBILITIES:
 
 5. CustomerCommsCrew:
    - Formats customer-facing responses after specialist workers have gathered information.
-   - Call this worker when specialist facts have been collected and need a polished customer communication, or proceed directly to FINISH if the specialist response is already complete.
+   - Always route to CustomerCommsCrew once specialist findings have been collected so that the communication is properly synthesized and quality-reviewed before finishing.
 
 6. FINISH:
-   - Select FINISH when all required specialist work has been completed and the question is answered.
+   - Select FINISH only after CustomerCommsCrew has executed, or if all required work is completely finished.
 
 ROUTING RULES:
 - Read the original user inquiry carefully.
@@ -127,7 +134,8 @@ ROUTING RULES:
 
 - IMPORTANT: DO NOT select a specialist worker that has already been executed for this inquiry unless new specific information is strictly needed.
 - For multi-domain questions (e.g. "Outage lasted 6 hours - do I get a credit?"), first call the outage/analytics or diagnostics worker, and then call the policy worker.
-- Once the necessary specialist workers have executed and their findings are recorded, choose FINISH.
+- Once the necessary specialist workers have executed and their findings are recorded, route to CustomerCommsCrew.
+- Once CustomerCommsCrew has executed, choose FINISH.
 
 CURRENT USER INQUIRY:
 "{user_query}"
@@ -136,10 +144,17 @@ CURRENT USER INQUIRY:
     supervisor_llm = _get_supervisor_llm()
     decision: SupervisorDecision = supervisor_llm.invoke(prompt)
 
-    # Safety guard: prevent infinite loop if a worker has already executed
     next_worker = decision.next_worker
-    if next_worker in executed_workers and next_worker not in ["CustomerCommsCrew", "FINISH"]:
-        next_worker = "FINISH"
+
+    # Safety guard: prevent infinite loops and ensure CustomerCommsCrew runs before FINISH
+    if next_worker in executed_workers and next_worker not in ["FINISH"]:
+        if "CustomerCommsCrew" not in executed_workers and current_context:
+            next_worker = "CustomerCommsCrew"
+        else:
+            next_worker = "FINISH"
+    elif next_worker == "FINISH" and current_context and "CustomerCommsCrew" not in executed_workers:
+        # Route to CustomerCommsCrew before finishing whenever specialist findings exist
+        next_worker = "CustomerCommsCrew"
 
     return {
         "next": next_worker,
@@ -163,9 +178,11 @@ def policy_rag_node(state: AgentState) -> dict:
     block = f"[PolicyRAG]\n{answer}"
     updated_context = f"{current_context}\n\n{block}" if current_context else block
 
+    output_preview = answer[:500] + ("..." if len(answer) > 500 else "")
     trace_entry = {
         "worker": "PolicyRAG",
-        "summary": answer[:160] + ("..." if len(answer) > 160 else ""),
+        "summary": output_preview,
+        "output": output_preview,
     }
 
     return {
@@ -188,9 +205,11 @@ def network_analytics_node(state: AgentState) -> dict:
     block = f"[NetworkAnalytics]\n{answer}"
     updated_context = f"{current_context}\n\n{block}" if current_context else block
 
+    output_preview = answer[:500] + ("..." if len(answer) > 500 else "")
     trace_entry = {
         "worker": "NetworkAnalytics",
-        "summary": answer[:160] + ("..." if len(answer) > 160 else ""),
+        "summary": output_preview,
+        "output": output_preview,
     }
 
     return {
@@ -213,9 +232,11 @@ def network_diagnostics_adk_node(state: AgentState) -> dict:
     block = f"[NetworkDiagnosticsADK]\n{answer}"
     updated_context = f"{current_context}\n\n{block}" if current_context else block
 
+    output_preview = answer[:500] + ("..." if len(answer) > 500 else "")
     trace_entry = {
         "worker": "NetworkDiagnosticsADK",
-        "summary": answer[:160] + ("..." if len(answer) > 160 else ""),
+        "summary": output_preview,
+        "output": output_preview,
     }
 
     return {
@@ -238,9 +259,11 @@ def billing_resolution_adk_node(state: AgentState) -> dict:
     block = f"[BillingResolutionADK]\n{answer}"
     updated_context = f"{current_context}\n\n{block}" if current_context else block
 
+    output_preview = answer[:500] + ("..." if len(answer) > 500 else "")
     trace_entry = {
         "worker": "BillingResolutionADK",
-        "summary": answer[:160] + ("..." if len(answer) > 160 else ""),
+        "summary": output_preview,
+        "output": output_preview,
     }
 
     return {
@@ -326,7 +349,8 @@ def run_telecom_assistant(user_query: str) -> dict:
     Primary execution function for the Telecom Operations Center.
     Invoked by UI (Streamlit), integration tests, or API scripts.
 
-    Returns the complete final AgentState dictionary.
+    Returns the complete final AgentState dictionary augmented with
+    convenience fields: 'final_response' and 'execution_trace'.
     """
     initial_state: AgentState = {
         "messages": [HumanMessage(content=user_query)],
@@ -338,6 +362,29 @@ def run_telecom_assistant(user_query: str) -> dict:
 
     # Execute graph with a safe recursion limit to prevent runaway loops
     final_state = graph.invoke(initial_state, config={"recursion_limit": 15})
+
+    # Extract clean final_response from CustomerCommsCrew or last AIMessage
+    final_response = ""
+    for msg in reversed(final_state.get("messages", [])):
+        if isinstance(msg, AIMessage) and msg.content:
+            final_response = msg.content
+            break
+    if not final_response:
+        final_response = final_state.get("agent_context", "")
+
+    # Format execution_trace conforming to Streamlit data contract
+    raw_trace = final_state.get("trace", [])
+    execution_trace = []
+    for step in raw_trace:
+        text = step.get("output") or step.get("summary") or ""
+        execution_trace.append({
+            "worker": step.get("worker", "Unknown"),
+            "summary": text,
+            "output": text,
+        })
+
+    final_state["final_response"] = final_response
+    final_state["execution_trace"] = execution_trace
     return final_state
 
 
